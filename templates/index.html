@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Main Chat Area -->
+        <div class="col-lg-8">
+            <div class="chat-container">
+                <!-- Chat Header -->
+                <div class="chat-header">
+                    <h1><i class="fas fa-robot"></i> Gemini AI Chatbot</h1>
+                    <div class="subtitle">
+                        Powered by Google's {% if model_name %}{{ model_name }}{% else %}Gemini AI{% endif %}
+                    </div>
+                </div>
+
+                <!-- Chat Messages -->
+                <div id="chatMessages" class="chat-messages">
+                    <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <h5>Welcome to Gemini Pro Chatbot!</h5>
+                        <p>Start a conversation by typing a message below.</p>
+                    </div>
+                </div>
+
+                <!-- Loading Spinner -->
+                <div id="loadingSpinner" class="loading-spinner">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <div class="mt-2">Thinking...</div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-container">
+                    <form id="chatForm">
+                        <div class="input-group">
+                            <input 
+                                type="text" 
+                                id="messageInput" 
+                                class="form-control" 
+                                placeholder="Type your message here..." 
+                                required
+                                autocomplete="off"
+                            >
+                            <button type="submit" id="sendButton" class="btn-send">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Panel -->
+        <div class="col-lg-4">
+            <div class="chat-container">
+                <div class="history-header">
+                    <i class="fas fa-history"></i> Chat History
+                </div>
+                <div id="historyPanel" class="history-panel" style="height: 540px;">
+                    <div class="empty-state">
+                        <i class="fas fa-clock"></i>
+                        <p>No conversation history yet.</p>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="clearHistoryBtn" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-trash"></i> Clear History
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+class GeminiChatbot {
+    constructor() {
+        this.chatMessages = document.getElementById('chatMessages');
+        this.messageInput = document.getElementById('messageInput');
+        this.sendButton = document.getElementById('sendButton');
+        this.loadingSpinner = document.getElementById('loadingSpinner');
+        this.chatForm = document.getElementById('chatForm');
+        this.historyPanel = document.getElementById('historyPanel');
+        this.clearHistoryBtn = document.getElementById('clearHistoryBtn');
+        
+        this.init();
+    }
+
+    init() {
+        this.chatForm.addEventListener('submit', (e) => this.handleSubmit(e));
+        this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
+        this.messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.handleSubmit(e);
+            }
+        });
+        
+        // Check API status on load
+        this.checkStatus();
+        
+        // Load existing history
+        this.loadHistory();
+        
+        // Focus on input
+        this.messageInput.focus();
+    }
+
+    async checkStatus() {
+        try {
+            const response = await fetch('/status');
+            const status = await response.json();
+            
+            if (!status.model_available || !status.api_key_configured) {
+                this.showErrorMessage('⚠️ Configuration Issue: Please check your Gemini API key in the .env file');
+            }
+        } catch (error) {
+            console.error('Status check failed:', error);
+        }
+    }
+
+    showErrorMessage(message) {
+        this.clearEmptyState();
+        this.addMessage(message, 'bot', null, true);
+    }
+
+    async handleSubmit(e) {
+        e.preventDefault();
+        
+        const message = this.messageInput.value.trim();
+        if (!message) return;
+
+        // Clear empty state if it exists
+        this.clearEmptyState();
+        
+        // Add user message to chat
+        this.addMessage(message, 'user');
+        
+        // Clear input and disable form
+        this.messageInput.value = '';
+        this.setLoading(true);
+        
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message })
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                // Add bot response to chat
+                this.addMessage(data.response, 'bot', data.timestamp);
+                // Refresh history
+                this.loadHistory();
+            } else {
+                this.addMessage(`Error: ${data.error}`, 'bot', null, true);
+            }
+        } catch (error) {
+            this.addMessage(`Network error: ${error.message}`, 'bot', null, true);
+        }
+        
+        this.setLoading(false);
+        this.messageInput.focus();
+    }
+
+    addMessage(content, type, timestamp = null, isError = false) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+        
+        const bubbleDiv = document.createElement('div');
+        bubbleDiv.className = 'message-bubble';
+        
+        if (isError) {
+            bubbleDiv.style.background = '#fee';
+            bubbleDiv.style.borderColor = '#fcc';
+            bubbleDiv.style.color = '#c33';
+        }
+        
+        // Format message content (basic markdown support)
+        const formattedContent = this.formatMessage(content);
+        bubbleDiv.innerHTML = formattedContent;
+        
+        messageDiv.appendChild(bubbleDiv);
+        
+        // Add timestamp
+        if (timestamp || type === 'user') {
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = timestamp || new Date().toLocaleTimeString();
+            messageDiv.appendChild(timeDiv);
+        }
+        
+        this.chatMessages.appendChild(messageDiv);
+        this.scrollToBottom();
+    }
+
+    formatMessage(content) {
+        // Basic markdown formatting
+        return content
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/\n/g, '<br>');
+    }
+
+    setLoading(loading) {
+        if (loading) {
+            this.loadingSpinner.style.display = 'block';
+            this.sendButton.disabled = true;
+            this.messageInput.disabled = true;
+        } else {
+            this.loadingSpinner.style.display = 'none';
+            this.sendButton.disabled = false;
+            this.messageInput.disabled = false;
+        }
+    }
+
+    scrollToBottom() {
+        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
+    }
+
+    clearEmptyState() {
+        const emptyState = this.chatMessages.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.remove();
+        }
+    }
+
+    async loadHistory() {
+        try {
+            const response = await fetch('/history');
+            const data = await response.json();
+            
+            this.displayHistory(data.history || []);
+        } catch (error) {
+            console.error('Failed to load history:', error);
+        }
+    }
+
+    displayHistory(history) {
+        if (history.length === 0) {
+            this.historyPanel.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-clock"></i>
+                    <p>No conversation history yet.</p>
+                </div>
+            `;
+            return;
+        }
+
+        let historyHTML = '';
+        history.slice().reverse().forEach((item, index) => {
+            historyHTML += `
+                <div class="history-item" onclick="chatbot.scrollToMessage('${item.id}')">
+                    <div class="question">${this.truncateText(item.user_message, 50)}</div>
+                    <div class="time">${item.timestamp}</div>
+                </div>
+            `;
+        });
+        
+        this.historyPanel.innerHTML = historyHTML;
+    }
+
+    truncateText(text, maxLength) {
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
+    scrollToMessage(messageId) {
+        // This could be enhanced to scroll to specific messages if we add IDs
+        this.scrollToBottom();
+    }
+
+    async clearHistory() {
+        if (!confirm('Are you sure you want to clear the chat history?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch('/clear-history', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                // Clear chat messages
+                this.chatMessages.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-comments"></i>
+                        <h5>Welcome to Gemini Pro Chatbot!</h5>
+                        <p>Start a conversation by typing a message below.</p>
+                    </div>
+                `;
+                
+                // Clear history panel
+                this.historyPanel.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-clock"></i>
+                        <p>No conversation history yet.</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            alert('Failed to clear history. Please try again.');
+        }
+    }
+}
+
+// Initialize the chatbot when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.chatbot = new GeminiChatbot();
+});
+</script>
+{% endblock %}
