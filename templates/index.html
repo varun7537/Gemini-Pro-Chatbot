@@ -24,29 +24,60 @@
                 </div>
 
                 <!-- Loading Spinner -->
-                <div id="loadingSpinner" class="loading-spinner">
+                <div id="loadingSpinner" class="loading-spinner" style="display: none;">
                     <div class="spinner-border" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
                     <div class="mt-2">Thinking...</div>
                 </div>
 
-                <!-- Chat Input -->
-                <div class="chat-input-container">
-                    <form id="chatForm">
-                        <div class="input-group">
+                <!-- Templates / Prompts -->
+                <div class="p-3">
+                    <strong>Conversation Templates:</strong>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary template-btn">Tell me a joke</button>
+                        <button class="btn btn-sm btn-outline-secondary template-btn">Explain quantum computing</button>
+                        <button class="btn btn-sm btn-outline-secondary template-btn">Write a poem about AI</button>
+                    </div>
+                </div>
+
+                <div class="chat-input-container d-flex align-items-start gap-3">
+                    <!-- Chat Form -->
+                    <form id="chatForm" class="flex-grow-1 d-flex">
+                        <div class="input-group w-100">
                             <input 
                                 type="text" 
                                 id="messageInput" 
                                 class="form-control" 
                                 placeholder="Type your message here..." 
-                                required
+                                required 
                                 autocomplete="off"
                             >
-                            <button type="submit" id="sendButton" class="btn-send">
+                            <button type="submit" id="sendButton" class="btn btn-primary">
                                 <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
+                    </form>
+
+                    <!-- Upload Form -->
+                    <form id="uploadForm" class="d-flex flex-column">
+                        <!-- File Input -->
+                        <input 
+                            type="file" 
+                            id="fileInput" 
+                            class="form-control mb-2"
+                            onchange="handleFileSelection()"
+                        >
+                        
+                        <!-- Upload Button (Hidden Initially) -->
+                        <button 
+                            type="submit" 
+                            id="uploadButton" 
+                            class="btn btn-outline-primary btn-sm" 
+                            style="display: none;"
+                        >
+                            <i class="fas fa-upload"></i> Upload File
+                        </button>
                     </form>
                 </div>
             </div>
@@ -58,7 +89,7 @@
                 <div class="history-header">
                     <i class="fas fa-history"></i> Chat History
                 </div>
-                <div id="historyPanel" class="history-panel" style="height: 540px;">
+                <div id="historyPanel" class="history-panel" style="height: 400px;">
                     <div class="empty-state">
                         <i class="fas fa-clock"></i>
                         <p>No conversation history yet.</p>
@@ -68,6 +99,29 @@
                     <button id="clearHistoryBtn" class="btn btn-outline-primary btn-sm">
                         <i class="fas fa-trash"></i> Clear History
                     </button>
+                    <button id="exportBtn" class="btn btn-outline-success btn-sm">
+                        <i class="fas fa-download"></i> Export Chat
+                    </button>
+                    <button id="analyticsBtn" class="btn btn-outline-info btn-sm">
+                        📊 Analytics
+                    </button>
+                </div>
+                <div class="mt-3 p-3">
+                    <strong>Settings</strong>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="darkModeToggle">
+                        <label class="form-check-label">Dark Mode</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="autoScrollToggle" checked>
+                        <label class="form-check-label">Auto-scroll</label>
+                    </div>
+                    <div class="mt-2">
+                        <input id="tagInput" class="form-control form-control-sm" placeholder="Add Tag (e.g. Work)">
+                        <button id="addTagBtn" class="btn btn-outline-secondary btn-sm mt-1">
+                            Add Tag
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -77,6 +131,30 @@
 
 {% block scripts %}
 <script>
+
+function handleFileSelection() {
+    const fileInput = document.getElementById('fileInput');
+    const uploadButton = document.getElementById('uploadButton');
+
+    if (fileInput.files.length > 0) {
+        uploadButton.style.display = 'block';
+    } else {
+        uploadButton.style.display = 'none';
+    }
+}
+
+document.getElementById('uploadForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    const fileInput = document.getElementById('fileInput');
+    const file = fileInput.files[0];
+    
+    if (file) {
+        alert('File ready to upload: ' + file.name);
+    }
+});
+
+
 class GeminiChatbot {
     constructor() {
         this.chatMessages = document.getElementById('chatMessages');
@@ -86,27 +164,42 @@ class GeminiChatbot {
         this.chatForm = document.getElementById('chatForm');
         this.historyPanel = document.getElementById('historyPanel');
         this.clearHistoryBtn = document.getElementById('clearHistoryBtn');
-        
+        this.uploadForm = document.getElementById('uploadForm');
+        this.fileInput = document.getElementById('fileInput');
+        this.exportBtn = document.getElementById('exportBtn');
+        this.analyticsBtn = document.getElementById('analyticsBtn');
+        this.tagInput = document.getElementById('tagInput');
+        this.addTagBtn = document.getElementById('addTagBtn');
+        this.darkModeToggle = document.getElementById('darkModeToggle');
+        this.autoScrollToggle = document.getElementById('autoScrollToggle');
+        this.templates = document.querySelectorAll('.template-btn');
+
         this.init();
     }
 
     init() {
         this.chatForm.addEventListener('submit', (e) => this.handleSubmit(e));
+        this.uploadForm.addEventListener('submit', (e) => this.handleUpload(e));
         this.clearHistoryBtn.addEventListener('click', () => this.clearHistory());
+        this.exportBtn.addEventListener('click', () => this.exportChat());
+        this.analyticsBtn.addEventListener('click', () => this.openAnalytics());
+        this.addTagBtn.addEventListener('click', () => this.addTag());
+        this.darkModeToggle.addEventListener('change', () => this.toggleDarkMode());
+        this.autoScrollToggle.addEventListener('change', () => this.toggleAutoScroll());
+        this.templates.forEach(btn => btn.addEventListener('click', (e) => {
+            this.messageInput.value = e.target.textContent;
+            this.messageInput.focus();
+        }));
         this.messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.handleSubmit(e);
             }
         });
-        
-        // Check API status on load
+
         this.checkStatus();
-        
-        // Load existing history
         this.loadHistory();
-        
-        // Focus on input
+        this.loadUserSettings();
         this.messageInput.focus();
     }
 
@@ -114,9 +207,8 @@ class GeminiChatbot {
         try {
             const response = await fetch('/status');
             const status = await response.json();
-            
             if (!status.model_available || !status.api_key_configured) {
-                this.showErrorMessage('⚠️ Configuration Issue: Please check your Gemini API key in the .env file');
+                this.showErrorMessage('Configuration Issue: Please check your Gemini API key in the .env file');
             }
         } catch (error) {
             console.error('Status check failed:', error);
@@ -130,80 +222,195 @@ class GeminiChatbot {
 
     async handleSubmit(e) {
         e.preventDefault();
-        
         const message = this.messageInput.value.trim();
         if (!message) return;
 
-        // Clear empty state if it exists
         this.clearEmptyState();
-        
-        // Add user message to chat
         this.addMessage(message, 'user');
-        
-        // Clear input and disable form
         this.messageInput.value = '';
         this.setLoading(true);
-        
+
         try {
             const response = await fetch('/chat', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ message: message })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
             });
-            
             const data = await response.json();
-            
             if (response.ok) {
-                // Add bot response to chat
-                this.addMessage(data.response, 'bot', data.timestamp);
-                // Refresh history
+                this.addMessage(data.response, 'bot', data.timestamp, message);
                 this.loadHistory();
             } else {
-                this.addMessage(`Error: ${data.error}`, 'bot', null, true);
+                this.showErrorMessage(`Error: ${data.error}`);
             }
         } catch (error) {
-            this.addMessage(`Network error: ${error.message}`, 'bot', null, true);
+            this.showErrorMessage(`Network error: ${error.message}`);
         }
-        
+
         this.setLoading(false);
         this.messageInput.focus();
     }
 
-    addMessage(content, type, timestamp = null, isError = false) {
+    async handleUpload(e) {
+        e.preventDefault();
+        const file = this.fileInput.files[0];
+        if (!file) {
+            alert('No file selected.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+        this.setLoading(true);
+
+        try {
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await response.json();
+            if (response.ok) {
+                this.addMessage(`File uploaded: ${data.filename}`, 'bot');
+            } else {
+                this.showErrorMessage(`Upload error: ${data.error}`);
+            }
+        } catch (error) {
+            this.showErrorMessage(`Network error: ${error.message}`);
+        }
+
+        this.setLoading(false);
+        this.fileInput.value = '';
+    }
+
+    async regenerate(prompt) {
+        if (!prompt) return;
+        this.setLoading(true);
+
+        try {
+            const response = await fetch('/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: prompt })
+            });
+            const data = await response.json();
+            if (response.ok) {
+                this.addMessage(data.response, 'bot', data.timestamp, prompt);
+                this.loadHistory();
+            } else {
+                this.showErrorMessage(`Error: ${data.error}`);
+            }
+        } catch (error) {
+            this.showErrorMessage(`Network error: ${error.message}`);
+        }
+
+        this.setLoading(false);
+    }
+
+    async sendReaction(message, reaction) {
+        try {
+            await fetch('/reaction', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message, reaction })
+            });
+            alert(`You reacted: ${reaction}`);
+        } catch (error) {
+            console.error('Reaction failed:', error);
+        }
+    }
+
+    async exportChat() {
+        try {
+            const response = await fetch('/export');
+            const blob = await response.blob();
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = 'chat_history.json';
+            link.click();
+        } catch (error) {
+            alert('Failed to export chat. Please try again.');
+        }
+    }
+
+    async addTag() {
+        const tag = this.tagInput.value.trim();
+        if (!tag) {
+            alert('Tag cannot be empty.');
+            return;
+        }
+
+        try {
+            await fetch('/add-tag', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tag })
+            });
+            alert(`Tag '${tag}' added!`);
+            this.tagInput.value = '';
+        } catch (error) {
+            alert('Failed to add tag. Please try again.');
+        }
+    }
+
+    toggleDarkMode() {
+        document.body.classList.toggle('dark', this.darkModeToggle.checked);
+        localStorage.setItem('darkMode', this.darkModeToggle.checked);
+    }
+
+    toggleAutoScroll() {
+        localStorage.setItem('autoScroll', this.autoScrollToggle.checked);
+    }
+
+    loadUserSettings() {
+        if (localStorage.getItem('darkMode') === 'true') {
+            this.darkModeToggle.checked = true;
+            document.body.classList.add('dark');
+        }
+        if (localStorage.getItem('autoScroll') === 'false') {
+            this.autoScrollToggle.checked = false;
+        }
+    }
+
+    openAnalytics() {
+        window.open('/analytics', '_blank');
+    }
+
+    addMessage(content, type, timestamp = null, originalPrompt = null, isError = false) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
-        
+
         const bubbleDiv = document.createElement('div');
         bubbleDiv.className = 'message-bubble';
-        
         if (isError) {
             bubbleDiv.style.background = '#fee';
             bubbleDiv.style.borderColor = '#fcc';
             bubbleDiv.style.color = '#c33';
         }
-        
-        // Format message content (basic markdown support)
-        const formattedContent = this.formatMessage(content);
-        bubbleDiv.innerHTML = formattedContent;
-        
+        bubbleDiv.innerHTML = this.formatMessage(content);
         messageDiv.appendChild(bubbleDiv);
-        
-        // Add timestamp
+
+        if (type === 'bot' && originalPrompt) {
+            const reactionDiv = document.createElement('div');
+            reactionDiv.className = 'reaction-buttons';
+            reactionDiv.innerHTML = `
+                <button onclick="chatbot.sendReaction('${encodeURIComponent(content)}','like')" class="btn btn-sm btn-outline-success">👍</button>
+                <button onclick="chatbot.sendReaction('${encodeURIComponent(content)}','dislike')" class="btn btn-sm btn-outline-danger">👎</button>
+                <button onclick="chatbot.regenerate('${encodeURIComponent(originalPrompt)}')" class="btn btn-sm btn-outline-primary">♻️ Regenerate</button>
+            `;
+            messageDiv.appendChild(reactionDiv);
+        }
+
         if (timestamp || type === 'user') {
             const timeDiv = document.createElement('div');
             timeDiv.className = 'message-time';
             timeDiv.textContent = timestamp || new Date().toLocaleTimeString();
             messageDiv.appendChild(timeDiv);
         }
-        
+
         this.chatMessages.appendChild(messageDiv);
-        this.scrollToBottom();
+        if (this.autoScrollToggle.checked) {
+            this.scrollToBottom();
+        }
     }
 
     formatMessage(content) {
-        // Basic markdown formatting
         return content
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -212,15 +419,10 @@ class GeminiChatbot {
     }
 
     setLoading(loading) {
-        if (loading) {
-            this.loadingSpinner.style.display = 'block';
-            this.sendButton.disabled = true;
-            this.messageInput.disabled = true;
-        } else {
-            this.loadingSpinner.style.display = 'none';
-            this.sendButton.disabled = false;
-            this.messageInput.disabled = false;
-        }
+        this.loadingSpinner.style.display = loading ? 'block' : 'none';
+        this.sendButton.disabled = loading;
+        this.messageInput.disabled = loading;
+        this.fileInput.disabled = loading;
     }
 
     scrollToBottom() {
@@ -229,16 +431,13 @@ class GeminiChatbot {
 
     clearEmptyState() {
         const emptyState = this.chatMessages.querySelector('.empty-state');
-        if (emptyState) {
-            emptyState.remove();
-        }
+        if (emptyState) emptyState.remove();
     }
 
     async loadHistory() {
         try {
             const response = await fetch('/history');
             const data = await response.json();
-            
             this.displayHistory(data.history || []);
         } catch (error) {
             console.error('Failed to load history:', error);
@@ -257,7 +456,7 @@ class GeminiChatbot {
         }
 
         let historyHTML = '';
-        history.slice().reverse().forEach((item, index) => {
+        history.slice().reverse().forEach((item) => {
             historyHTML += `
                 <div class="history-item" onclick="chatbot.scrollToMessage('${item.id}')">
                     <div class="question">${this.truncateText(item.user_message, 50)}</div>
@@ -265,7 +464,6 @@ class GeminiChatbot {
                 </div>
             `;
         });
-        
         this.historyPanel.innerHTML = historyHTML;
     }
 
@@ -274,25 +472,18 @@ class GeminiChatbot {
     }
 
     scrollToMessage(messageId) {
-        // This could be enhanced to scroll to specific messages if we add IDs
-        this.scrollToBottom();
+        this.scrollToBottom(); 
     }
 
     async clearHistory() {
-        if (!confirm('Are you sure you want to clear the chat history?')) {
-            return;
-        }
+        if (!confirm('Are you sure you want to clear the chat history?')) return;
 
         try {
             const response = await fetch('/clear-history', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
+                headers: { 'Content-Type': 'application/json' }
             });
-            
             if (response.ok) {
-                // Clear chat messages
                 this.chatMessages.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-comments"></i>
@@ -300,14 +491,14 @@ class GeminiChatbot {
                         <p>Start a conversation by typing a message below.</p>
                     </div>
                 `;
-                
-                // Clear history panel
                 this.historyPanel.innerHTML = `
                     <div class="empty-state">
                         <i class="fas fa-clock"></i>
                         <p>No conversation history yet.</p>
                     </div>
                 `;
+            } else {
+                alert('Failed to clear history. Please try again.');
             }
         } catch (error) {
             alert('Failed to clear history. Please try again.');
@@ -315,7 +506,6 @@ class GeminiChatbot {
     }
 }
 
-// Initialize the chatbot when the page loads
 document.addEventListener('DOMContentLoaded', () => {
     window.chatbot = new GeminiChatbot();
 });

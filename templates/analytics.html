@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .stats-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+  .stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+  }
+  .stat-label {
+    font-weight: 500;
+    color: #6c757d;
+  }
+  .stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #343a40;
+  }
+</style>
+
+<div class="container my-5">
+  <div class="row mb-4">
+    <div class="col text-center">
+      <h2 class="fw-bold">
+        📊 Usage Analytics
+      </h2>
+      <p class="text-muted">Your recent activity summary</p>
+    </div>
+  </div>
+
+  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
+    <div class="col">
+      <div class="card stats-card shadow-sm border-0 h-100 text-center py-4">
+        <div class="card-body">
+          <div class="stat-label">Total Messages</div>
+          <div class="stat-value">{{ stats.total_messages }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card stats-card shadow-sm border-0 h-100 text-center py-4">
+        <div class="card-body">
+          <div class="stat-label">Regenerations</div>
+          <div class="stat-value">{{ stats.regenerations }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card stats-card shadow-sm border-0 h-100 text-center py-4">
+        <div class="card-body">
+          <div class="stat-label">File Uploads</div>
+          <div class="stat-value">{{ stats.uploads }}</div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card stats-card shadow-sm border-0 h-100 text-center py-4">
+        <div class="card-body">
+          <div class="stat-label">Reactions Given</div>
+          <div class="stat-value">{{ stats.reactions }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

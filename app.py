@@ -1,67 +1,64 @@
-# app.py
 from flask import Flask, render_template, request, jsonify, session
 import google.generativeai as genai
 import os
 from datetime import datetime
 import uuid
 from dotenv import load_dotenv
+from werkzeug.utils import secure_filename
+import json
 
-# Load environment variables
 load_dotenv()
 
 app = Flask(__name__)
-
-# Configure from environment or use defaults
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Configure Gemini API
+UPLOAD_FOLDER = './uploads'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 if not GEMINI_API_KEY:
-    print("⚠️  WARNING: GEMINI_API_KEY not found in environment variables!")
+    print("WARNING: GEMINI_API_KEY not found in environment variables!")
     print("Please create a .env file with your API key")
-    GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'  # Fallback
+    GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'
 
-# Available Gemini models (as of 2025)
 AVAILABLE_MODELS = [
-    'gemini-2.5-flash',      # Fast and efficient 
-    'gemini-2.5-pro',        # Most advanced reasoning
-    'gemini-1.5-flash',      # Fallback (may not work for new projects)
-    'gemini-1.5-pro'         # Fallback (may not work for new projects)
+    'gemini-2.5-flash',
+    'gemini-2.5-pro',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro'
 ]
 
 def initialize_gemini():
     """Initialize Gemini with the best available model"""
     if not GEMINI_API_KEY or GEMINI_API_KEY == 'YOUR_GEMINI_API_KEY_HERE':
-        print("❌ Invalid API key")
+        print("Invalid API key")
         return None, None
     
     genai.configure(api_key=GEMINI_API_KEY)
     
-    # Try models in order of preference
     for model_name in AVAILABLE_MODELS:
         try:
-            print(f"🔄 Trying model: {model_name}")
+            print(f"Trying model: {model_name}")
             model = genai.GenerativeModel(model_name)
-            # Test the model with a simple query
             test_response = model.generate_content("Hello")
-            print(f"✅ Successfully initialized {model_name}")
+            print(f"Successfully initialized {model_name}")
             return model, model_name
         except Exception as e:
-            print(f"❌ Failed to initialize {model_name}: {e}")
+            print(f"Failed to initialize {model_name}: {e}")
             continue
     
-    print("❌ No working Gemini models found")
+    print("No working Gemini models found")
     return None, None
 
-# Initialize the model
 model, current_model_name = initialize_gemini()
 
-
-
 def initialize_session():
-    """Initialize session variables for chat history"""
+    """Initialize session variables for chat history and reactions"""
     if 'chat_history' not in session:
         session['chat_history'] = []
+    if 'reactions' not in session:
+        session['reactions'] = []
     if 'session_id' not in session:
         session['session_id'] = str(uuid.uuid4())
 
@@ -86,7 +83,6 @@ def chat():
     try:
         initialize_session()
         
-        # Check if model is available
         if model is None:
             return jsonify({'error': 'Gemini API not configured. Please check your API key.'}), 500
         
@@ -95,11 +91,9 @@ def chat():
         if not user_message:
             return jsonify({'error': 'Empty message'}), 400
         
-        # Generate response using Gemini
         response = model.generate_content(user_message)
         bot_response = response.text
         
-        # Create chat entry
         chat_entry = {
             'id': str(uuid.uuid4()),
             'user_message': user_message,
@@ -107,10 +101,8 @@ def chat():
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
-        # Add to session history
         session['chat_history'].append(chat_entry)
         
-        # Keep only last 50 messages to prevent session bloat
         if len(session['chat_history']) > 50:
             session['chat_history'] = session['chat_history'][-50:]
         
@@ -139,17 +131,79 @@ def clear_history():
     session.modified = True
     return jsonify({'message': 'History cleared successfully'})
 
+@app.route('/upload', methods=['POST'])
+def upload():
+    """Handle file uploads"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+    return jsonify({'message': 'File uploaded', 'filename': filename})
+
+@app.route('/reaction', methods=['POST'])
+def reaction():
+    """Handle message reactions"""
+    try:
+        data = request.get_json()
+        if not data or 'message' not in data or 'reaction' not in data:
+            return jsonify({'error': 'Invalid reaction data'}), 400
+        
+        reaction = {
+            'message': data['message'],
+            'reaction': data['reaction'],
+            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }
+        session['reactions'].append(reaction)
+        session.modified = True
+        return jsonify({'message': 'Reaction stored'})
+    except Exception as e:
+        print(f"Error in reaction route: {e}")
+        return jsonify({'error': f'Error storing reaction: {str(e)}'}), 500
+
+@app.route('/export')
+def export():
+    history = session.get('history', [])
+    export_data = json.dumps(history, indent=2)
+    with open('export.json', 'w') as f:
+        f.write(export_data)
+    return send_file('export.json', as_attachment=True)
+
+@app.route('/add-tag', methods=['POST'])
+def add_tag():
+    data = request.get_json()
+    tag = data.get('tag')
+    if not tag:
+        return jsonify({'error': 'No tag'}), 400
+    session.setdefault('tags', []).append(tag)
+    session.modified = True
+    return jsonify({'message': f'Tag {tag} added'})
+
+@app.route('/analytics')
+def analytics():
+    stats = {
+        'total_messages': len(session.get('chat_history', [])),
+        'regenerations': session.get('regen_count', 0),
+        'uploads': session.get('upload_count', 0),
+        'reactions': len(session.get('reactions', []))
+    }
+    return render_template('analytics.html', stats=stats)
+
+
 if __name__ == '__main__':
-    print("🚀 Starting Flask Gemini Chatbot...")
-    print("📋 Checking configuration...")
+    print("Starting Flask Gemini Chatbot...")
+    print("Checking configuration...")
     
     if not os.getenv('GEMINI_API_KEY'):
-        print("❌ GEMINI_API_KEY not found!")
+        print("GEMINI_API_KEY not found!")
         print("Please create a .env file with:")
         print("SECRET_KEY=your-secret-key")
         print("GEMINI_API_KEY=your-gemini-api-key")
     else:
-        print("✅ Environment variables loaded")
+        print("Environment variables loaded")
     
-    print("🌐 Server starting on http://localhost:5000")
+    print("Server starting on http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)
